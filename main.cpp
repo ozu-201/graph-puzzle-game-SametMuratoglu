@@ -1,10 +1,11 @@
 #include <iostream>
 #include <fstream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <queue>
 #include <vector>
+#include <queue>
+#include <unordered_set>
+#include <unordered_map>
+#include <limits>
+#include <algorithm>
 
 using namespace std;
 
@@ -12,99 +13,162 @@ struct Node {
     string word;
     vector<Node*> neighbors;
 
-    Node(const string& w) : word(w) {}
+    Node(string w) : word(w) {}
 };
 
-bool isValidChange(const string& word1, const string& word2) {
+class Graph {
+public:
+    unordered_set<string> dictionary;
+    vector<Node*> nodes;
 
-    return true;
-}
+    void readDictionary(const string& filename) {
+        ifstream file(filename);
+        string word;
 
-Node* buildGraph(const vector<string>& words) {
-    unordered_map<string, Node*> wordMap;
-
-    for (const string& word : words) {
-        Node* newNode = new Node(word);
-        wordMap[word] = newNode;
-    }
-
-    for (const string& word : words) {
-        Node* currentNode = wordMap[word];
-
-        for (const string& otherWord : words) {
-            if (word != otherWord && isValidChange(word, otherWord)) {
-                currentNode->neighbors.push_back(wordMap[otherWord]);
-            }
+        while (file >> word) {
+            dictionary.insert(word);
         }
     }
 
-    return wordMap[words[0]];
-}
+    void buildGraph(int length) {
+        for (const auto& word : dictionary) {
+            if (word.length() == length) {
+                nodes.push_back(new Node(word));
+            }
+        }
 
-Node* initializeGraph(const string& filename) {
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error opening file: " << filename << endl;
-        exit(1);
-    }
-
-    vector<string> words;
-    string word;
-
-    while (file >> word) {
-        words.push_back(word);
-    }
-
-    file.close();
-
-    return buildGraph(words);
-}
-
-vector<string> breadthFirstSearch(Node* start, const string& target) {
-    queue<pair<Node*, vector<string>>> q;
-    unordered_set<Node*> visited;
-
-    q.push({start, {start->word}});
-    visited.insert(start);
-
-    while (!q.empty()) {
-        auto current = q.front();
-        q.pop();
-
-        for (Node* neighbor : current.first->neighbors) {
-            if (visited.find(neighbor) == visited.end()) {
-                vector<string> path = current.second;
-                path.push_back(neighbor->word);
-
-                if (neighbor->word == target) {
-                    return path;
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            for (size_t j = i + 1; j < nodes.size(); ++j) {
+                if (isOneLetterApart(nodes[i]->word, nodes[j]->word)) {
+                    nodes[i]->neighbors.push_back(nodes[j]);
+                    nodes[j]->neighbors.push_back(nodes[i]);
                 }
-
-                q.push({neighbor, path});
-                visited.insert(neighbor);
             }
         }
     }
 
-    return {};
-}
+    vector<string> findShortestPathBFS(const string& start, const string& target) {
+        return findShortestPath(start, target, false);
+    }
+
+    vector<string> findShortestPathDijkstra(const string& start, const string& target) {
+        return findShortestPath(start, target, true);
+    }
+
+private:
+    Node* findNode(const string& word) {
+        for (const auto& node : nodes) {
+            if (node->word == word) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    vector<string> findShortestPath(const string& start, const string& target, bool useDijkstra) {
+        vector<string> path;
+        Node* startNode = findNode(start);
+
+        if (startNode == nullptr) {
+            cerr << "Start word not found in the dictionary." << endl;
+            return path;
+        }
+
+        Node* targetNode = findNode(target);
+
+        if (targetNode == nullptr) {
+            cerr << "Target word not found in the dictionary." << endl;
+            return path;
+        }
+
+        unordered_map<Node*, int> distance;
+        unordered_map<Node*, Node*> previous;
+        priority_queue<pair<int, Node*>, vector<pair<int, Node*>>, greater<pair<int, Node*>>> pq;
+
+        for (const auto& node : nodes) {
+            distance[node] = numeric_limits<int>::max();
+        }
+
+        distance[startNode] = 0;
+        pq.push({0, startNode});
+
+        while (!pq.empty()) {
+            Node* current = pq.top().second;
+            pq.pop();
+
+            for (const auto& neighbor : current->neighbors) {
+                int alt = distance[current] + 1;
+
+                if (alt < distance[neighbor]) {
+                    distance[neighbor] = alt;
+                    previous[neighbor] = current;
+                    pq.push({alt, neighbor});
+                }
+            }
+        }
+
+        Node* current = targetNode;
+        while (current != nullptr) {
+            path.push_back(current->word);
+            current = previous[current];
+        }
+
+        reverse(path.begin(), path.end());
+
+        return path;
+    }
+
+    bool isOneLetterApart(const string& word1, const string& word2) {
+        int diffCount = 0;
+
+        for (size_t i = 0; i < word1.length(); ++i) {
+            if (word1[i] != word2[i]) {
+                ++diffCount;
+                if (diffCount > 1) {
+                    return false;
+                }
+            }
+        }
+
+        return diffCount == 1;
+    }
+};
 
 int main() {
-    Node* startingNode = initializeGraph("dictionary.txt");
+    Graph graph;
+    graph.readDictionary("dictionary.txt");
 
-    string targetWord = "target_word";
+    string startWord, targetWord;
+    cout << "Select the word you start to search: ";
+    cin >> startWord;
+    cout << "Enter the target word: ";
+    cin >> targetWord;
 
-    vector<string> path = breadthFirstSearch(startingNode, targetWord);
+    int wordLength = startWord.length();
+    graph.buildGraph(wordLength);
 
-    if (path.empty()) {
-        cout << "No path found to the target word." << endl;
-    } else {
-        cout << "Path to the target word:" << endl;
-        for (const string& word : path) {
-            cout << word << " ";
+    vector<string> bfsPath = graph.findShortestPathBFS(startWord, targetWord);
+    cout << "Shortest Path from '" << startWord << "' to '" << targetWord << "' (BFS):" << endl;
+
+    for (size_t i = 0; i < bfsPath.size(); ++i) {
+        cout << bfsPath[i];
+        if (i < bfsPath.size() - 1) {
+            cout << " -> ";
         }
-        cout << endl;
     }
+    cout << endl;
+
+
+    vector<string> dijkstraPath = graph.findShortestPathDijkstra(startWord, targetWord);
+    cout << "Shortest Path from '" << startWord << "' to '" << targetWord << "' (Dijkstra):" << endl;
+
+    for (size_t i = 0; i < dijkstraPath.size(); ++i) {
+        cout << dijkstraPath[i];
+        if (i < dijkstraPath.size() - 1) {
+            cout << " -> ";
+        }
+    }
+    cout << endl;
 
     return 0;
 }
